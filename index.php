@@ -1,11 +1,6 @@
 <?php
 require_once 'dbcon.php';
 
-// Tambahkan fungsi untuk mengatur mode ke manual
-if (isset($_POST['set_manual_mode'])) {
-    saveData("silagung-controller/status/activeMode", "Manual");
-}
-
 // Fungsi untuk mengupdate status relay
 if (isset($_POST['update_relay'])) {
     $relay_number = $_POST['relay_number'];
@@ -25,9 +20,11 @@ if (isset($_POST['update_relay'])) {
 // Fungsi untuk mengupdate VFD
 if (isset($_POST['update_vfd'])) {
     $vfd_status = isset($_POST['vfd_status']) ? 'on' : 'off';
-    $frequency = $_POST['frequency'];
+    // Tidak perlu lagi mengatur frekuensi karena VFD dikendalikan oleh relay 6 saja
     saveData("silagung-controller/commands/vfd", $vfd_status == 'on');
-    saveData("silagung-controller/commands/frequency", floatval($frequency));
+    
+    // Update relay 6 sesuai status VFD
+    saveData("silagung-controller/relay/relay6", $vfd_status == 'on');
 }
 
 // Fungsi untuk mengatur mode relay
@@ -45,9 +42,9 @@ if (isset($_POST['set_mode'])) {
             saveData("silagung-controller/relay/relay3", false);
             saveData("silagung-controller/relay/relay4", true);
             saveData("silagung-controller/relay/relay5", false);
-            saveData("silagung-controller/relay/relay6", false);
+            saveData("silagung-controller/relay/relay6", true);  // Relay 6 ON untuk VFD
             
-            // Aktifkan VFD juga
+            // Aktifkan VFD juga (relay 6 sudah diaktifkan di atas)
             saveData("silagung-controller/commands/vfd", true);
             
             // Update mode aktif
@@ -61,9 +58,9 @@ if (isset($_POST['set_mode'])) {
             saveData("silagung-controller/relay/relay3", true);
             saveData("silagung-controller/relay/relay4", true);
             saveData("silagung-controller/relay/relay5", false);
-            saveData("silagung-controller/relay/relay6", false);
+            saveData("silagung-controller/relay/relay6", true);  // Relay 6 ON untuk VFD
             
-            // Aktifkan VFD juga
+            // Aktifkan VFD juga (relay 6 sudah diaktifkan di atas)
             saveData("silagung-controller/commands/vfd", true);
             
             // Update mode aktif
@@ -77,9 +74,9 @@ if (isset($_POST['set_mode'])) {
             saveData("silagung-controller/relay/relay3", false);
             saveData("silagung-controller/relay/relay4", false);
             saveData("silagung-controller/relay/relay5", true);
-            saveData("silagung-controller/relay/relay6", false);
+            saveData("silagung-controller/relay/relay6", true);  // Relay 6 ON untuk VFD
             
-            // Aktifkan VFD juga
+            // Aktifkan VFD juga (relay 6 sudah diaktifkan di atas)
             saveData("silagung-controller/commands/vfd", true);
             
             // Update mode aktif
@@ -92,7 +89,7 @@ if (isset($_POST['set_mode'])) {
                 saveData("silagung-controller/relay/relay{$i}", false);
             }
             
-            // Matikan VFD juga
+            // Matikan VFD juga (relay 6 sudah dimatikan di atas)
             saveData("silagung-controller/commands/vfd", false);
             
             // Update mode aktif
@@ -206,6 +203,7 @@ $active_mode = getData("silagung-controller/status/activeMode") ?? "Manual";
 
 // Ambil jadwal
 $schedules = getData("silagung-controller/schedules") ?? [];
+
 ?>
 
 <!DOCTYPE html>
@@ -215,6 +213,8 @@ $schedules = getData("silagung-controller/schedules") ?? [];
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Silagung Controller</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
     <style>
         body {
             background-color: #f5f5f5;
@@ -315,7 +315,7 @@ $schedules = getData("silagung-controller/schedules") ?? [];
                                     <span class="status-badge <?php echo $vfd_status ? 'status-on' : 'status-off'; ?>"></span>
                                     <?php echo $vfd_status ? 'Aktif' : 'Nonaktif'; ?>
                                 </span>
-                                <span class="me-3">Frekuensi: <?php echo $vfd_frequency; ?> Hz</span>
+                                <span class="me-3">(Dikendalikan oleh Relay 6)</span>
                             </div>
                             <div class="badge bg-primary">
                                 Mode: <?php echo $active_mode; ?>
@@ -330,10 +330,13 @@ $schedules = getData("silagung-controller/schedules") ?? [];
                         Kontrol VFD
             </div>
             <div class="card-body">
+                <div class="alert alert-info alert-sm py-2 mb-3">
+                    VFD dikendalikan melalui Relay 6. Pengaturan ini akan otomatis mengontrol Relay 6. Pengaturan kecepatan VFD dilakukan secara manual di panel kelistrikan.
+                </div>
                 <form method="POST" action="">
                     <input type="hidden" name="update_vfd" value="1">
                     <div class="row align-items-center">
-                                <div class="col-md-5">
+                                <div class="col-md-12">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" name="vfd_status" 
                                        id="vfdSwitch" <?php echo $vfd_status ? 'checked' : ''; ?>>
@@ -342,17 +345,6 @@ $schedules = getData("silagung-controller/schedules") ?? [];
                                         </label>
                             </div>
                         </div>
-                                <div class="col-md-7">
-                            <label for="freqSlider" class="form-label">
-                                Frekuensi: <span id="freqValue"><?php echo $vfd_frequency; ?></span> Hz
-                            </label>
-                            <input type="range" class="form-range" id="freqSlider" name="frequency"
-                                        min="0" max="50" step="0.1" value="<?php echo $vfd_frequency; ?>">
-                                    <div class="d-flex justify-content-between">
-                                        <small class="text-muted">0 Hz</small>
-                                        <small class="text-muted">50 Hz</small>
-                        </div>
-                    </div>
                                 <div class="col-12 mt-3">
                                     <button type="submit" class="btn btn-primary btn-sm">Update VFD</button>
                                 </div>
@@ -368,7 +360,7 @@ $schedules = getData("silagung-controller/schedules") ?? [];
             </div>
             <div class="card-body">
                         <div class="alert alert-info alert-sm py-2 mb-3">
-                            Mode Isi Bak, Mixing, dan Supply akan menyalakan VFD otomatis. Mode Manual memungkinkan kontrol relay satu per satu.
+                            Mode Isi Bak, Mixing, dan Supply akan menyalakan VFD otomatis melalui Relay 6. Mode Manual memungkinkan kontrol relay satu per satu, kecuali Relay 6 yang dikontrol melalui menu VFD.
                 </div>
                 <form method="POST" action="">
                     <input type="hidden" name="set_mode" value="1">
@@ -439,7 +431,7 @@ $schedules = getData("silagung-controller/schedules") ?? [];
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php for ($i = 1; $i <= 6; $i++): ?>
+                                    <?php for ($i = 1; $i <= 5; $i++): ?>
                                     <tr>
                                         <td>Relay <?php echo $i; ?></td>
                                         <td>
@@ -449,6 +441,16 @@ $schedules = getData("silagung-controller/schedules") ?? [];
                                         </td>
                                     </tr>
                                     <?php endfor; ?>
+                                    <!-- Tampilan khusus untuk Relay 6 (VFD) -->
+                                    <tr class="table-light">
+                                        <td>Relay 6 (VFD)</td>
+                                        <td>
+                                            <span class="badge <?php echo $relay_status[6] ? 'bg-success' : 'bg-danger'; ?>">
+                                                <?php echo $relay_status[6] ? 'Aktif' : 'Nonaktif'; ?>
+                                            </span>
+                                            <small class="text-muted"> - Dikontrol oleh menu VFD</small>
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                 </div>
@@ -712,12 +714,8 @@ $schedules = getData("silagung-controller/schedules") ?? [];
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
     <script>
-        // Update nilai frekuensi saat slider digerakkan
-        document.getElementById('freqSlider').addEventListener('input', function(e) {
-            document.getElementById('freqValue').textContent = e.target.value;
-        });
-        
         // Toggle text untuk VFD switch
         document.getElementById('vfdSwitch').addEventListener('change', function(e) {
             const label = this.nextElementSibling;
